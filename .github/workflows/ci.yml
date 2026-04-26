@@ -1,0 +1,124 @@
+name: ci
+
+on:
+  push:
+    branches: "*"
+  pull_request:
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: "-C debuginfo=0 --deny warnings"
+  RUSTDOCFLAGS: -Dwarnings
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # See top README for MSRV policy
+        rust-version: [1.85.0, stable]
+    steps:
+      - uses: actions/checkout@v6
+
+      # Downgrade all dependencies to their minimum version, both to ensure our
+      # minimum version bounds are correct and buildable, as well as to satisfy
+      # our MSRV check when arbitrary dependencies bump their MSRV beyond our
+      # MSRV in a patch-release.
+      # This implies that downstream consumers can only rely on our MSRV when
+      # downgrading various (transitive) dependencies.
+      - uses: hecrj/setup-rust-action@v2
+        with:
+          rust-version: nightly
+        if: ${{ matrix.rust-version != 'stable' }}
+      - name: Downgrade dependencies
+        run: cargo +nightly generate-lockfile -Zminimal-versions
+        if: ${{ matrix.rust-version != 'stable' }}
+
+      - uses: hecrj/setup-rust-action@v2
+        with:
+          rust-version: ${{ matrix.rust-version }}
+
+      - name: Install Rust targets
+        run: >
+          rustup target add
+          aarch64-linux-android
+          armv7-linux-androideabi
+          x86_64-linux-android
+          i686-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo +stable install cargo-ndk
+
+      - name: Build game-activity
+        working-directory: android-activity
+        run: >
+          cargo ndk
+          -t arm64-v8a
+          -t armeabi-v7a
+          -t x86_64
+          -t x86
+          build --features game-activity
+
+      - name: Build native-activity
+        working-directory: android-activity
+        run: >
+          cargo ndk
+          -t arm64-v8a
+          -t armeabi-v7a
+          -t x86_64
+          -t x86
+          build --features native-activity
+
+      - name: Build agdk-mainloop example
+        if: matrix.rust-version == 'stable'
+        working-directory: examples/agdk-mainloop
+        run: >
+          cargo ndk
+          -t arm64-v8a
+          -t armeabi-v7a
+          -t x86_64
+          -t x86
+          -o app/src/main/jniLibs/ -- build
+
+      - name: Build na-mainloop example
+        if: matrix.rust-version == 'stable'
+        working-directory: examples/na-mainloop
+        run: >
+          cargo ndk
+          -t arm64-v8a
+          -t armeabi-v7a
+          -t x86_64
+          -t x86
+          -o app/src/main/jniLibs/ -- build
+
+      - name: Documentation
+        run: >
+          cargo ndk -t arm64-v8a doc --no-deps
+
+      - name: Build doctests
+        # All doctests are set to no_run, because they require running in the
+        # context of an Android app.
+        # Only run on stable because cross-compiling doctests is only supported
+        # since Rust 1.89.
+        if: ${{ matrix.rust-version == 'stable' }}
+        run: |
+          cargo test --doc -F native-activity --target aarch64-linux-android
+          cargo ndk -t arm64-v8a -- test --doc -F game-activity
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Format
+        run: cargo fmt --all -- --check
+        working-directory: android-activity
+
+      - name: Format na-mainloop example
+        run: cargo fmt --all -- --check
+        working-directory: examples/na-mainloop
+
+      - name: Format agdk-mainloop example
+        run: cargo fmt --all -- --check
+        working-directory: examples/agdk-mainloop
