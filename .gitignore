@@ -1,2 +1,4 @@
 /target
 /Cargo.lock
+.agent-context
+.agent-progress
