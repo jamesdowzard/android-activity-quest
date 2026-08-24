@@ -8,6 +8,14 @@ Meta Quest 3 (HorizonOS 12) fires `onNativeWindowResized` / `onNativeWindowRedra
 
 ## Layout
 
+Top-level directories, as `harness-docs-drift` reads them against
+`git ls-files`. Only depth-0 rows are parsed — keep this flat.
+
+```
+android-activity-quest/
+├── android-activity/
+└── examples/
+```
 - `android-activity/` — the actual crate (`name = "android-activity"`, `version = "0.6.1"`).
 - `examples/` — minimal upstream examples; kept for smoke tests.
 
